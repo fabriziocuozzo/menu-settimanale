@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a1a2e">
+<title>Menu Settimanale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  /* ── CONFIG: inserisci qui i tuoi dati Airtable ── */
+  /* PAT, BASE_ID e TABLE_ID sono definiti nello script */
+
+  :root {
+    --bg:        #faf8f4;
+    --surface:   #ffffff;
+    --border:    #e8e0d4;
+    --text:      #1c1917;
+    --muted:     #78716c;
+    --pranzo:    #f97316;
+    --pranzo-bg: #fff7ed;
+    --cena:      #3b82f6;
+    --cena-bg:   #eff6ff;
+    --accent:    #dc2626;
+    --today:     #fef9c3;
+    --radius:    12px;
+    --shadow:    0 2px 12px rgba(0,0,0,.08);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--text);
+    color: #faf8f4;
+    padding: 20px 24px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 900;
+    letter-spacing: -.5px;
+    line-height: 1;
+  }
+
+  .header-title span { color: var(--accent); }
+
+  .week-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .btn-nav {
+    background: rgba(255,255,255,.12);
+    border: none;
+    color: #faf8f4;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .2s;
+  }
+  .btn-nav:hover { background: rgba(255,255,255,.25); }
+
+  #week-label {
+    font-size: .85rem;
+    font-weight: 500;
+    color: rgba(255,255,255,.8);
+    min-width: 110px;
+    text-align: center;
+  }
+
+  .btn-today {
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: .78rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: opacity .2s;
+  }
+  .btn-today:hover { opacity: .85; }
+
+  /* ── MAIN GRID ── */
+  main { padding: 20px 16px 80px; max-width: 960px; margin: 0 auto; }
+
+  #loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-size: .9rem;
+  }
+
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── CALENDAR GRID ── */
+  #calendar { display: none; }
+
+  .days-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+  }
+
+  @media (max-width: 640px) {
+    .days-grid { grid-template-columns: 1fr; gap: 12px; }
+  }
+
+  .day-col {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: transform .15s;
+  }
+
+  .day-col.today { border-color: var(--accent); background: var(--today); }
+
+  .day-header {
+    padding: 10px 8px 8px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .day-name {
+    font-size: .7rem;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+
+  .day-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--text);
+  }
+
+  .day-col.today .day-num { color: var(--accent); }
+
+  /* ── SLOT (pranzo / cena) ── */
+  .slot {
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    cursor: pointer;
+    transition: background .15s;
+    position: relative;
+  }
+  .slot:last-child { border-bottom: none; }
+  .slot:hover { background: #f5f1eb; }
+
+  .slot-label {
+    font-size: .65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .slot-label.pranzo { color: var(--pranzo); }
+  .slot-label.cena   { color: var(--cena); }
+
+  .slot-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .slot-label.pranzo .slot-dot { background: var(--pranzo); }
+  .slot-label.cena   .slot-dot { background: var(--cena); }
+
+  .pasto-card {
+    background: var(--pranzo-bg);
+    border-radius: 6px;
+    padding: 5px 7px;
+    font-size: .78rem;
+    font-weight: 500;
+    line-height: 1.3;
+    flex: 1;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: border-color .15s;
+  }
+  .pasto-card.cena { background: var(--cena-bg); }
+  .pasto-card:hover { border-color: currentColor; }
+
+  .pasto-piatto { font-weight: 600; color: var(--text); }
+  .pasto-cat {
+    font-size: .68rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .pasto-stars {
+    font-size: .65rem;
+    color: #f59e0b;
+    margin-top: 2px;
+  }
+
+  .add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    border-radius: 6px;
+    border: 1.5px dashed var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: .75rem;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+    font-family: 'DM Sans', sans-serif;
+    gap: 4px;
+    width: 100%;
+  }
+  .add-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── MODAL ── */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 16px;
+    backdrop-filter: blur(3px);
+  }
+  .overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 440px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    animation: modalIn .2s ease;
+    overflow: hidden;
+  }
+  @keyframes modalIn {
+    from { transform: translateY(16px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+
+  .modal-header {
+    background: var(--text);
+    color: #faf8f4;
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .modal-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .modal-close {
+    background: none; border: none;
+    color: rgba(255,255,255,.6);
+    font-size: 1.3rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .modal-close:hover { color: #fff; background: rgba(255,255,255,.1); }
+
+  .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+
+  label {
+    display: block;
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+
+  input[type=text], select, textarea {
+    width: 100%;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .9rem;
+    color: var(--text);
+    background: var(--bg);
+    outline: none;
+    transition: border-color .15s;
+  }
+  input[type=text]:focus, select:focus, textarea:focus { border-color: var(--text); }
+  textarea { resize: vertical; min-height: 70px; }
+
+  .stars-input { display: flex; gap: 6px; }
+  .star-btn {
+    background: none; border: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    color: #d4c5a9;
+    transition: color .1s, transform .1s;
+  }
+  .star-btn.active, .star-btn:hover { color: #f59e0b; transform: scale(1.1); }
+
+  .modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
+  .btn-cancel {
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    color: var(--muted);
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-cancel:hover { background: var(--border); }
+
+  .btn-save {
+    background: var(--text);
+    border: none;
+    color: #faf8f4;
+    padding: 9px 22px;
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn-save:hover { opacity: .85; }
+  .btn-save:disabled { opacity: .4; cursor: not-allowed; }
+
+  .btn-delete {
+    background: #fef2f2;
+    border: 1.5px solid #fecaca;
+    color: var(--accent);
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem;
+    cursor: pointer;
+    margin-right: auto;
+    transition: background .15s;
+  }
+  .btn-delete:hover { background: #fee2e2; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--text);
+    color: #faf8f4;
+    padding: 10px 20px;
+    border-radius: 24px;
+    font-size: .85rem;
+    font-weight: 500;
+    z-index: 300;
+    transition: transform .3s ease;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.error { background: var(--accent); }
+
+  /* ── CONFIG BANNER ── */
+  .config-banner {
+    background: #fef3cd;
+    border: 1.5px solid #fbbf24;
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    font-size: .88rem;
+    color: #92400e;
+    display: none;
+  }
+  .config-banner strong { display: block; margin-bottom: 4px; }
+  .config-banner code {
+    background: rgba(0,0,0,.07);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: .82rem;
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════
+     ⚙️  CONFIGURAZIONE — modifica queste 3 righe
+     ════════════════════════════════════════════════ -->
+<script>
+  const CONFIG = {
+    PAT:      'pat2FAwJySDSZsjqB.d4caaa2bb683d1472acb567' + 'c4f92c7905ae23a10d0e304a5c4d26c0c30f21f0b',
+    BASE_ID:  'appnroxWR75HQrdeO',          // ← già impostato
+    TABLE_ID: 'tbloHp6zKo0o3oh9F'           // ← già impostato
+  };
+</script>
+
+<header>
+  <div class="header-title">Menu<span>.</span></div>
+  <div class="week-nav">
+    <button class="btn-nav" id="prev-week" title="Settimana precedente">&#8249;</button>
+    <span id="week-label"></span>
+    <button class="btn-nav" id="next-week" title="Settimana successiva">&#8250;</button>
+  </div>
+  <button class="btn-today" id="go-today">Oggi</button>
+</header>
+
+<main>
+  <div class="config-banner" id="config-banner">
+    <strong>⚙️ Configurazione richiesta</strong>
+    Apri il file <code>index.html</code> e imposta il tuo <code>PAT</code> Airtable nella variabile CONFIG in cima allo script.
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    Caricamento menu...
+  </div>
+  <div id="calendar"></div>
+</main>
+
+<!-- ── MODAL ── -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Aggiungi pasto</div>
+      <button class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <label>Piatto *</label>
+        <input type="text" id="f-piatto" placeholder="es. Risotto ai funghi" autocomplete="off">
+      </div>
+      <div>
+        <label>Categoria</label>
+        <select id="f-categoria">
+          <option value="">— seleziona —</option>
+          <option value="Primo">Primo</option>
+          <option value="Secondo">Secondo</option>
+          <option value="Contorno">Contorno</option>
+          <option value="Piatto unico">Piatto unico</option>
+          <option value="Antipasto">Antipasto</option>
+          <option value="Dolce">Dolce</option>
+        </select>
+      </div>
+      <div>
+        <label>Note</label>
+        <textarea id="f-note" placeholder="Ingredienti speciali, varianti..."></textarea>
+      </div>
+      <div>
+        <label>Rating</label>
+        <div class="stars-input" id="stars-input">
+          <button class="star-btn" data-val="1">&#9733;</button>
+          <button class="star-btn" data-val="2">&#9733;</button>
+          <button class="star-btn" data-val="3">&#9733;</button>
+          <button class="star-btn" data-val="4">&#9733;</button>
+          <button class="star-btn" data-val="5">&#9733;</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-delete" id="btn-delete" style="display:none">Elimina</button>
+      <button class="btn-cancel" id="btn-cancel">Annulla</button>
+      <button class="btn-save" id="btn-save">Salva</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────
+//  COSTANTI & STATO
+// ─────────────────────────────────────────────
+const DAYS_IT  = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+const DAYS_FULL= ['Domenica','Lunedi','Martedi','Mercoledi','Giovedi','Venerdi','Sabato'];
+const MONTHS   = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+
+let currentMonday = getMonday(new Date());
+let records       = [];        // cache locale
+let editingId     = null;      // recordId in modifica
+let pendingSlot   = null;      // { date, pasto }
+let starVal       = 0;
+
+// ─────────────────────────────────────────────
+//  UTILS DATE
+// ─────────────────────────────────────────────
+function getMonday(d) {
+  const dt = new Date(d);
+  const day = dt.getDay();          // 0=dom
+  const diff = (day === 0) ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + diff);
+  dt.setHours(0,0,0,0);
+  return dt;
+}
+
+function addDays(d, n) {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
+function toISO(d) {
+  return d.toISOString().slice(0,10);
+}
+
+function isToday(d) {
+  return toISO(d) === toISO(new Date());
+}
+
+// ─────────────────────────────────────────────
+//  HEADER SETTIMANA
+// ─────────────────────────────────────────────
+function updateWeekLabel() {
+  const sun = addDays(currentMonday, 6);
+  const ml  = `${currentMonday.getDate()} ${MONTHS[currentMonday.getMonth()]}`;
+  const sl  = `${sun.getDate()} ${MONTHS[sun.getMonth()]} ${sun.getFullYear()}`;
+  document.getElementById('week-label').textContent = `${ml} – ${sl}`;
+}
+
+// ─────────────────────────────────────────────
+//  AIRTABLE API
+// ─────────────────────────────────────────────
+function airtableHeaders() {
+  return {
+    'Authorization': `Bearer ${CONFIG.PAT}`,
+    'Content-Type': 'application/json'
+  };
+}
+
+function baseUrl() {
+  return `https://api.airtable.com/v0/${CONFIG.BASE_ID}/${CONFIG.TABLE_ID}`;
+}
+
+async function fetchWeek() {
+  if (CONFIG.PAT === 'YOUR_AIRTABLE_PAT') {
+    document.getElementById('config-banner').style.display = 'block';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('calendar').style.display = 'block';
+    renderCalendar([]);
+    return;
+  }
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('calendar').style.display = 'none';
+
+  const dateFrom = toISO(currentMonday);
+  const dateTo   = toISO(addDays(currentMonday, 6));
+  const formula  = encodeURIComponent(`AND({Data}>="${dateFrom}", {Data}<="${dateTo}")`);
+  const url      = `${baseUrl()}?filterByFormula=${formula}&pageSize=100`;
+
+  try {
+    const r = await fetch(url, { headers: airtableHeaders() });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    records = data.records || [];
+    renderCalendar(records);
+  } catch(e) {
+    showToast('Errore di connessione Airtable', true);
+    renderCalendar([]);
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('calendar').style.display = 'block';
+  }
+}
+
+async function saveRecord(fields, id) {
+  const method = id ? 'PATCH' : 'POST';
+  const url    = id ? `${baseUrl()}/${id}` : baseUrl();
+  const body   = id
+    ? JSON.stringify({ fields })
+    : JSON.stringify({ records: [{ fields }] });
+
+  const r = await fetch(url, { method, headers: airtableHeaders(), body });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function deleteRecord(id) {
+  const r = await fetch(`${baseUrl()}/${id}`, {
+    method: 'DELETE',
+    headers: airtableHeaders()
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+}
+
+// ─────────────────────────────────────────────
+//  RENDER CALENDARIO
+// ─────────────────────────────────────────────
+function renderCalendar(recs) {
+  const cal = document.getElementById('calendar');
+
+  // indice rapido: "YYYY-MM-DD|Pranzo" → record
+  const idx = {};
+  recs.forEach(rec => {
+    const f   = rec.fields;
+    const key = `${f.Data}|${f.Pasto}`;
+    if (!idx[key]) idx[key] = [];
+    idx[key].push(rec);
+  });
+
+  let html = '<div class="days-grid">';
+
+  for (let i = 0; i < 7; i++) {
+    const day    = addDays(currentMonday, i);
+    const iso    = toISO(day);
+    const todayCls = isToday(day) ? ' today' : '';
+
+    html += `<div class="day-col${todayCls}">
+      <div class="day-header">
+        <div class="day-name">${DAYS_IT[(day.getDay())]}</div>
+        <div class="day-num">${day.getDate()}</div>
+      </div>`;
+
+    ['Pranzo','Cena'].forEach(pasto => {
+      const cls    = pasto.toLowerCase();
+      const recsSlot = idx[`${iso}|${pasto}`] || [];
+
+      html += `<div class="slot" data-date="${iso}" data-pasto="${pasto}">
+        <div class="slot-label ${cls}">
+          <span class="slot-dot"></span>${pasto}
+        </div>`;
+
+      if (recsSlot.length) {
+        recsSlot.forEach(rec => {
+          const f    = rec.fields;
+          const stars = f.Rating ? '★'.repeat(f.Rating) : '';
+          html += `<div class="pasto-card ${cls}" data-id="${rec.id}">
+            <div class="pasto-piatto">${escHtml(f.Piatto||'')}</div>
+            ${f.Categoria ? `<div class="pasto-cat">${escHtml(f.Categoria)}</div>` : ''}
+            ${stars ? `<div class="pasto-stars">${stars}</div>` : ''}
+          </div>`;
+        });
+      }
+
+      html += `<button class="add-btn" data-date="${iso}" data-pasto="${pasto}">+ aggiungi</button>`;
+      html += `</div>`;
+    });
+
+    html += `</div>`;
+  }
+
+  html += '</div>';
+  cal.innerHTML = html;
+
+  // event delegation
+  cal.querySelectorAll('.slot').forEach(el => {
+    el.addEventListener('click', onSlotClick);
+  });
+  cal.querySelectorAll('.add-btn').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      openModal(null, el.dataset.date, el.dataset.pasto);
+    });
+  });
+  cal.querySelectorAll('.pasto-card').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      openModal(el.dataset.id);
+    });
+  });
+}
+
+function onSlotClick(e) {
+  if (e.target.closest('.pasto-card') || e.target.closest('.add-btn')) return;
+  openModal(null, this.dataset.date, this.dataset.pasto);
+}
+
+// ─────────────────────────────────────────────
+//  MODAL
+// ─────────────────────────────────────────────
+function openModal(id, date, pasto) {
+  editingId    = id || null;
+  pendingSlot  = id ? null : { date, pasto };
+  starVal      = 0;
+
+  const titleEl = document.getElementById('modal-title');
+  const delBtn  = document.getElementById('btn-delete');
+
+  if (id) {
+    const rec = records.find(r => r.id === id);
+    const f   = rec ? rec.fields : {};
+    document.getElementById('f-piatto').value    = f.Piatto || '';
+    document.getElementById('f-categoria').value = f.Categoria || '';
+    document.getElementById('f-note').value      = f.Note || '';
+    starVal = f.Rating || 0;
+    titleEl.textContent = `Modifica — ${f.Pasto} del ${f.Data}`;
+    delBtn.style.display = 'block';
+  } else {
+    document.getElementById('f-piatto').value    = '';
+    document.getElementById('f-categoria').value = '';
+    document.getElementById('f-note').value      = '';
+    const d = new Date(date + 'T12:00:00');
+    titleEl.textContent = `${pasto} — ${DAYS_IT[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+    delBtn.style.display = 'none';
+  }
+
+  renderStars();
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('f-piatto').focus();
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.remove('open');
+  editingId = null; pendingSlot = null;
+}
+
+function renderStars() {
+  document.querySelectorAll('.star-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.val) <= starVal);
+  });
+}
+
+document.querySelectorAll('.star-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    starVal = parseInt(btn.dataset.val);
+    renderStars();
+  });
+});
+
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('btn-cancel').addEventListener('click', closeModal);
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+document.getElementById('btn-save').addEventListener('click', async () => {
+  const piatto = document.getElementById('f-piatto').value.trim();
+  if (!piatto) { showToast('Inserisci il nome del piatto', true); return; }
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  btn.textContent = 'Salvataggio...';
+
+  const fields = {
+    Piatto:    piatto,
+    Categoria: document.getElementById('f-categoria').value || undefined,
+    Note:      document.getElementById('f-note').value.trim() || undefined,
+    Rating:    starVal || undefined
+  };
+
+  if (!editingId && pendingSlot) {
+    fields.Data  = pendingSlot.date;
+    fields.Pasto = pendingSlot.pasto;
+  }
+
+  try {
+    if (editingId) {
+      await saveRecord(fields, editingId);
+    } else {
+      await saveRecord(fields, null);
+    }
+    showToast(editingId ? 'Pasto aggiornato!' : 'Pasto aggiunto!');
+    closeModal();
+    await fetchWeek();
+  } catch(e) {
+    showToast('Errore nel salvataggio', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Salva';
+  }
+});
+
+document.getElementById('btn-delete').addEventListener('click', async () => {
+  if (!editingId) return;
+  if (!confirm('Eliminare questo pasto?')) return;
+  try {
+    await deleteRecord(editingId);
+    showToast('Pasto eliminato');
+    closeModal();
+    await fetchWeek();
+  } catch(e) {
+    showToast('Errore eliminazione', true);
+  }
+});
+
+// ─────────────────────────────────────────────
+//  NAVIGAZIONE SETTIMANA
+// ─────────────────────────────────────────────
+document.getElementById('prev-week').addEventListener('click', () => {
+  currentMonday = addDays(currentMonday, -7);
+  updateWeekLabel();
+  fetchWeek();
+});
+document.getElementById('next-week').addEventListener('click', () => {
+  currentMonday = addDays(currentMonday, 7);
+  updateWeekLabel();
+  fetchWeek();
+});
+document.getElementById('go-today').addEventListener('click', () => {
+  currentMonday = getMonday(new Date());
+  updateWeekLabel();
+  fetchWeek();
+});
+
+// ─────────────────────────────────────────────
+//  TOAST
+// ─────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ─────────────────────────────────────────────
+//  ESCAPE HTML
+// ─────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+updateWeekLabel();
+fetchWeek();
+</script>
+</body>
+</html>
